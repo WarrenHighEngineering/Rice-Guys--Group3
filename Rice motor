@@ -1,0 +1,23 @@
+    @Override
+public void runOpMode() {
+        control_Hub = hardwareMap.get(Blinker.class, "Control Hub");
+        test_motor = hardwareMap.get(DcMotor.class, "test_motor");
+        test_servo = hardwareMap.get(Servo.class, "test_servo");
+        test_touch = hardwareMap.get(TouchSensor.class, "test_touch");
+
+        test_servo.setPosition(0);
+
+        telemetry.addData("Status", "Initialized");
+        telemetry.update();
+        // Wait for the game to start (driver presses PLAY)
+        waitForStart();
+
+        // run until the end of the match (driver presses STOP)
+        while (opModeIsActive()) {
+            test_motor.setPower(1);
+            telemetry.addData("Motor Power", test_motor.getPower());
+            telemetry.addData("Status", "Running");
+            telemetry.update();
+
+        }
+    }

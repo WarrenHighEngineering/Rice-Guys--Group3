@@ -43,12 +43,12 @@ public class StartTeleOp extends LinearOpMode {
 
             for (DcMotor m : leftMotors)
             {
-                m.setPower(-drivePowerLeft);
+                m.setPower(drivePowerLeft);
             }
 
             for (DcMotor m : rightMotors)
             {
-                m.setPower(drivePowerRight);
+                m.setPower(-drivePowerRight);
             }
 
             // add statistics and data to debug log on driver hub

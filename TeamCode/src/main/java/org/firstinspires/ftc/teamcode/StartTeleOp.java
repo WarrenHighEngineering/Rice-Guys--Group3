@@ -43,7 +43,7 @@ public class StartTeleOp extends LinearOpMode {
 
             for (DcMotor m : leftMotors)
             {
-                m.setPower(drivePowerLeft);
+                m.setPower(-drivePowerLeft);
             }
 
             for (DcMotor m : rightMotors)

@@ -5,36 +5,43 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
+
+import org.firstinspires.ftc.ftccommon.internal.manualcontrol.parameters.ImuParameters;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
 @TeleOp(name = "StartTeleOp2Test")
 public class StartTeleOp extends LinearOpMode {
 
+    // defining max deadband and power
     private static final double deadband = 0.08;
     private static final double maxPower = 0.85;
+
+    // Initializing motors (configs in driver hub)
+    DcMotor BLMotor = hardwareMap.get(DcMotor.class, "MotorBL");
+    DcMotor BRMotor = hardwareMap.get(DcMotor.class, "MotorBR");
+    DcMotor FRMotor = hardwareMap.get(DcMotor.class, "MotorFR");
+    DcMotor FLMotor = hardwareMap.get(DcMotor.class, "MotorFL");
+
+
+    // Starting direction: Is logo facing straight up to the sky? Which way are usb ports facing?
+    IMU.Parameters params = new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.UP, RevHubOrientationOnRobot.UsbFacingDirection.LEFT));
+
+    boolean lastAState = false; // Checks if a button is pressed already
+
+    // separate right and left motors for tank drive
+    // allMotors is to configure all at the same time
+    DcMotor[] rightMotors = {FRMotor, BRMotor};
+    DcMotor[] leftMotors = {FLMotor, BLMotor};
+    DcMotor[] allMotors = {BLMotor, BRMotor, FRMotor, FLMotor};
+
+    // Initializes IMU and its orientation variables
+    IMU imu = hardwareMap.get(IMU.class, "imu");
 
     @Override
     public void runOpMode() {
 
-        // defines deadband as 8% of stick travel
-
-        // giving all motors references
-        DcMotor BLMotor = hardwareMap.get(DcMotor.class, "MotorBL");
-        DcMotor BRMotor = hardwareMap.get(DcMotor.class, "MotorBR");
-        DcMotor FRMotor = hardwareMap.get(DcMotor.class, "MotorFR");
-        DcMotor FLMotor = hardwareMap.get(DcMotor.class, "MotorFL");
-
-        IMU imu;
-
-        boolean lastAState = false; // Checks if a button is pressed already
-
-        // separate right and left motors for tank drive
-        // allMotors is to configure all at the same time
-        DcMotor[] rightMotors = {FRMotor, BRMotor};
-        DcMotor[] leftMotors = {FLMotor, BLMotor};
-        DcMotor[] allMotors = {BLMotor, BRMotor, FRMotor, FLMotor};
-
+        imu.initialize(params);
         // make sure all motors are "braked" when no joystick movement on their respective sides.
         for (DcMotor m : allMotors)
         {
@@ -50,26 +57,23 @@ public class StartTeleOp extends LinearOpMode {
         // run until the end of the match (driver presses STOP)
         while (opModeIsActive()) {
 
-            // left stick controls and powers left motors and vice versa for right motors (without deadband)
+            if (gamepad1.square && !lastAState)
+            {
+                turnDegrees(90);
+            }
 
+            if (gamepad1.circle && !lastAState)
+            {
+                turnDegrees(-90);
+            }
+
+            // left stick controls and powers left motors and vice versa for right motors (without deadband)
             double drivePowerLeft = gamepad1.left_stick_y;
             double drivePowerRight = gamepad1.right_stick_y;
 
             // modified deadband???
             double moddedPowerLeft = scaleValue(drivePowerLeft, Math.signum(drivePowerLeft));
             double moddedPowerRight = scaleValue(drivePowerRight, Math.signum(drivePowerRight));
-
-            // Uses deadband in order to make movement more smooth ( IF USING THIS DO NOT USE CODE ABOVE)
-            /*
-
-            double sigLeft = Math.signum(drivePowerLeft);
-            double sigRight = Math.signum(drivePowerRight);
-
-            double scaledRight = scaleValue(drivePowerRight, sigRight);
-            double scaledLeft = scaleValue(drivePowerLeft, sigLeft);
-
-             */
-
 
             for (DcMotor m : leftMotors)
             {
@@ -105,6 +109,46 @@ public class StartTeleOp extends LinearOpMode {
             double newVal = (Math.abs(limitToMaxVal) - deadband) / (1.0 - deadband);
             return newVal * sign;
         }
+    }
+
+    private void turnDegrees(double targetAngle) {
+        // Reset IMU yaw orientation to 0
+        imu.resetYaw();
+
+        double turnPower = 0.5; // Turn speed (0.0 to 1.0)
+        double currentHeading = getHeading();
+        double targetHeading = currentHeading + targetAngle;
+
+        // Determine spin direction: positive angle = left turn, negative = right turn
+        // ? means if/else so  - variable = (condition) ? true (do this) : false (do this)
+        double leftPower = (targetAngle > 0) ? -turnPower : turnPower; // if target angle is greater than 0, turn left wheels back (go left). else go right.
+        double rightPower = (targetAngle > 0) ? turnPower : -turnPower; // if target angle is greater than 0, turn right wheels back (go left). else go right.
+
+        // Drive motors in opposite directions until heading reaches target angle
+        // the > 2.0 is just for better control with the rotation
+        while (opModeIsActive() && Math.abs(getHeading() - targetHeading) > 2.0) {
+            for (DcMotor m : leftMotors) {
+                m.setPower(leftPower);
+            }
+            for (DcMotor m : rightMotors) {
+                m.setPower(rightPower); // Matching inverted polarity from main loop
+            }
+
+            telemetry.addData("Turning to", targetHeading);
+            telemetry.addData("Current Heading", getHeading());
+            telemetry.update();
+        }
+
+        // Stop all motors after turn finishes
+        for (DcMotor m : leftMotors) m.setPower(0);
+        for (DcMotor m : rightMotors) m.setPower(0);
+    }
+
+    // Finds what direction we are rotated relative to the starting direction.
+    private double getHeading()
+    {
+        YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
+        return orientation.getYaw(AngleUnit.DEGREES);
     }
 
 }

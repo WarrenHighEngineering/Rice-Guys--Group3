@@ -16,32 +16,31 @@ public class StartTeleOp extends LinearOpMode {
     // defining max deadband and power
     private static final double deadband = 0.08;
     private static final double maxPower = 0.85;
-
-    // Initializing motors (configs in driver hub)
-    DcMotor BLMotor = hardwareMap.get(DcMotor.class, "MotorBL");
-    DcMotor BRMotor = hardwareMap.get(DcMotor.class, "MotorBR");
-    DcMotor FRMotor = hardwareMap.get(DcMotor.class, "MotorFR");
-    DcMotor FLMotor = hardwareMap.get(DcMotor.class, "MotorFL");
-
-
-    // Starting direction: Is logo facing straight up to the sky? Which way are usb ports facing?
-    IMU.Parameters params = new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.UP, RevHubOrientationOnRobot.UsbFacingDirection.LEFT));
+    private static final double maxTurnPower = 0.35;
 
     boolean lastAState = false; // Checks if a button is pressed already
-
-    // separate right and left motors for tank drive
-    // allMotors is to configure all at the same time
-    DcMotor[] rightMotors = {FRMotor, BRMotor};
-    DcMotor[] leftMotors = {FLMotor, BLMotor};
-    DcMotor[] allMotors = {BLMotor, BRMotor, FRMotor, FLMotor};
-
-    // Initializes IMU and its orientation variables
-    IMU imu = hardwareMap.get(IMU.class, "imu");
 
     @Override
     public void runOpMode() {
 
+        // Initializing motors (configs in driver hub)
+        DcMotor BLMotor = hardwareMap.get(DcMotor.class, "MotorBL");
+        DcMotor BRMotor = hardwareMap.get(DcMotor.class, "MotorBR");
+        DcMotor FRMotor = hardwareMap.get(DcMotor.class, "MotorFR");
+        DcMotor FLMotor = hardwareMap.get(DcMotor.class, "MotorFL");
+
+        // Initializes IMU and its orientation variables
+        IMU imu = hardwareMap.get(IMU.class, "imu");
+        // Starting direction: Is logo facing straight up to the sky? Which way are usb ports facing?
+        IMU.Parameters params = new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.UP, RevHubOrientationOnRobot.UsbFacingDirection.LEFT));
         imu.initialize(params);
+
+        // separate right and left motors for tank drive
+        // allMotors is to configure all at the same time
+        DcMotor[] rightMotors = {FRMotor, BRMotor};
+        DcMotor[] leftMotors = {FLMotor, BLMotor};
+        DcMotor[] allMotors = {BLMotor, BRMotor, FRMotor, FLMotor};
+
         // make sure all motors are "braked" when no joystick movement on their respective sides.
         for (DcMotor m : allMotors)
         {
@@ -59,17 +58,48 @@ public class StartTeleOp extends LinearOpMode {
 
             if (gamepad1.square && !lastAState)
             {
-                turnDegrees(90);
+                turnDegrees(90, imu, leftMotors, rightMotors);
             }
 
             if (gamepad1.circle && !lastAState)
             {
-                turnDegrees(-90);
+                turnDegrees(-90, imu, leftMotors, rightMotors);
             }
 
-            // left stick controls and powers left motors and vice versa for right motors (without deadband)
+            /* // left stick controls and powers left motors and vice versa for right motors (without deadband)
             double drivePowerLeft = gamepad1.left_stick_y;
             double drivePowerRight = gamepad1.right_stick_y;
+            */
+
+            double drivePowerLeft;
+            double drivePowerRight;
+
+            if (gamepad1.left_bumper)
+            {
+                drivePowerLeft = 1.00;
+            }
+            else if (gamepad1.left_trigger_pressed)
+            {
+                drivePowerLeft = -1.00;
+            }
+            else
+            {
+                drivePowerLeft = 0;
+            }
+
+            if (gamepad1.right_bumper)
+            {
+                drivePowerRight = 1.00;
+            }
+            else if (gamepad1.right_trigger_pressed)
+            {
+                drivePowerRight = -1.00;
+            }
+            else
+            {
+                drivePowerRight = 0;
+            }
+
 
             // modified deadband???
             double moddedPowerLeft = scaleValue(drivePowerLeft, Math.signum(drivePowerLeft));
@@ -111,22 +141,22 @@ public class StartTeleOp extends LinearOpMode {
         }
     }
 
-    private void turnDegrees(double targetAngle) {
+    private void turnDegrees(double targetAngle, IMU imu, DcMotor[] leftMotors, DcMotor[] rightMotors) {
         // Reset IMU yaw orientation to 0
         imu.resetYaw();
 
         double turnPower = 0.5; // Turn speed (0.0 to 1.0)
-        double currentHeading = getHeading();
+        double currentHeading = getHeading(imu);
         double targetHeading = currentHeading + targetAngle;
 
         // Determine spin direction: positive angle = left turn, negative = right turn
         // ? means if/else so  - variable = (condition) ? true (do this) : false (do this)
-        double leftPower = (targetAngle > 0) ? -turnPower : turnPower; // if target angle is greater than 0, turn left wheels back (go left). else go right.
+        double leftPower = (targetAngle > 0) ? turnPower : -turnPower; // if target angle is greater than 0, turn left wheels back (go left). else go right.
         double rightPower = (targetAngle > 0) ? turnPower : -turnPower; // if target angle is greater than 0, turn right wheels back (go left). else go right.
 
         // Drive motors in opposite directions until heading reaches target angle
         // the > 2.0 is just for better control with the rotation
-        while (opModeIsActive() && Math.abs(getHeading() - targetHeading) > 2.0) {
+        while (opModeIsActive() && Math.abs(getHeading(imu) - targetHeading) > 2.0) {
             for (DcMotor m : leftMotors) {
                 m.setPower(leftPower);
             }
@@ -135,7 +165,7 @@ public class StartTeleOp extends LinearOpMode {
             }
 
             telemetry.addData("Turning to", targetHeading);
-            telemetry.addData("Current Heading", getHeading());
+            telemetry.addData("Current Heading", getHeading(imu));
             telemetry.update();
         }
 
@@ -145,7 +175,7 @@ public class StartTeleOp extends LinearOpMode {
     }
 
     // Finds what direction we are rotated relative to the starting direction.
-    private double getHeading()
+    private double getHeading(IMU imu)
     {
         YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
         return orientation.getYaw(AngleUnit.DEGREES);

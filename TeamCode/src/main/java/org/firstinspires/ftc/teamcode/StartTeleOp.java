@@ -6,6 +6,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.ftccommon.internal.manualcontrol.parameters.ImuParameters;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -16,12 +17,19 @@ public class StartTeleOp extends LinearOpMode {
 
     // defining max deadband and power
     private static final double deadband = 0.08;
-    private static final double maxPower = 0.85;
-    private static double kP;
-    private static double kI;
-    private static double kD;
+    private static final double maxPower = 0.9;
+    private static final double maxTurnPower = 0.65;
+    private static final double kP = 0.015;
+    private static final double kI = 0;
+    private static final double kD = 0.01;
+    private static final double turnTolerance = 1.0; // degrees of tolerance
+    private static final double integralZone = 10.0; // degree range to use integral
+    private static final double turnTimeout = 1.5; // seconds until turn is timed out
+    private static final int settleLoops = 5; // loops in tolerance
+    private static final int turnDirection = 1; // change to -1 if robot spins wrong way
 
-    boolean lastAState = false; // Checks if a button is pressed already
+    boolean lastCircleState = false; // Checks if a button is pressed already
+    boolean lastSquareState = false;
 
     @Override
     public void runOpMode() {
@@ -59,15 +67,17 @@ public class StartTeleOp extends LinearOpMode {
         // run until the end of the match (driver presses STOP)
         while (opModeIsActive()) {
 
-            if (gamepad1.square && !lastAState)
+            if (gamepad1.square && !lastSquareState)
             {
                 turnDegrees(90, imu, leftMotors, rightMotors);
             }
 
-            if (gamepad1.circle && !lastAState)
+            if (gamepad1.circle && !lastCircleState)
             {
                 turnDegrees(-90, imu, leftMotors, rightMotors);
             }
+            lastSquareState = gamepad1.square;
+            lastCircleState = gamepad1.circle;
 
             /* // left stick controls and powers left motors and vice versa for right motors (without deadband)
             double drivePowerLeft = gamepad1.left_stick_y;
@@ -144,37 +154,75 @@ public class StartTeleOp extends LinearOpMode {
         }
     }
 
+    // an autonomous function that uses commands to turn some degrees with PID
     private void turnDegrees(double targetAngle, IMU imu, DcMotor[] leftMotors, DcMotor[] rightMotors) {
         // Reset IMU yaw orientation to 0
         imu.resetYaw();
 
-        double turnPower = 0.5; // Turn speed (0.0 to 1.0)
-        double currentHeading = getHeading(imu);
-        double targetHeading = currentHeading + targetAngle;
+        double integral = 0;
+        double lastError = targetAngle;
+        int settledCount = 0;
 
-        // Determine spin direction: positive angle = left turn, negative = right turn
-        // ? means if/else so  - variable = (condition) ? true (do this) : false (do this)
-        double leftPower = (targetAngle > 0) ? turnPower : -turnPower; // if target angle is greater than 0, turn left wheels back (go left). else go right.
-        double rightPower = (targetAngle > 0) ? turnPower : -turnPower; // if target angle is greater than 0, turn right wheels back (go left). else go right.
+        ElapsedTime timeoutTimer = new ElapsedTime(); // has a timer to see if action is taking longer than the timeout time (3 s)
+        ElapsedTime loopTimer = new ElapsedTime();
 
-        // Drive motors in opposite directions until heading reaches target angle
-        // the > 2.0 is just for better control with the rotation
-        while (opModeIsActive() && Math.abs(getHeading(imu) - targetHeading) > 2.0) {
-            for (DcMotor m : leftMotors) {
-                m.setPower(leftPower);
+        while (opModeIsActive() && timeoutTimer.seconds() < turnTimeout) {
+            double heading = getHeading(imu); // gets the current rotation of the robot
+            double error = angleWrap(targetAngle - heading); // The difference between target point and current heading
+
+            /*
+            * dt is kinda like a time tracker. We use it to track integral and derivative values over time
+            * execution loops by FTC fluctuate so its good to keep a constant time elapse
+            * the 0.001 is to prevent divide by 0 errors (Math.max takes the highest num from two vals)
+            */
+
+            double dt = Math.max(loopTimer.seconds(), 0.001);
+            loopTimer.reset();
+
+            // power based on distance to target
+            double p = kP * error;
+
+            if (Math.abs(error) < integralZone) {
+                integral += error * dt; // dt
+                // while in the integral zone, integral builds up.
+            } else {
+                integral = 0;
             }
-            for (DcMotor m : rightMotors) {
-                m.setPower(rightPower); // Matching inverted polarity from main loop
+
+            double i = kI * integral;
+
+            double d = kD * (error - lastError) / dt;
+            lastError = error;
+
+            // restricts power to fluctuating within a certain range.
+            double power = Range.clip(p + i + d, -maxTurnPower, maxTurnPower);
+
+            // settled count is used to limit oscillations with the robot when it tries to reach the desired angle
+            // letting it oscillate for an amount of times (settleLoops) really makes sure it reaches and stablizes at the angle
+            if (Math.abs(error) < turnTolerance) {
+                settledCount++;
+
+                if (settledCount > settleLoops) break;
+            } else {
+                settledCount = 0;
             }
 
-            telemetry.addData("Turning to", targetHeading);
-            telemetry.addData("Current Heading", getHeading(imu));
+            // Stop all motors after turn finishes
+            for (DcMotor m : leftMotors) m.setPower(power * turnDirection);
+            for (DcMotor m : rightMotors) m.setPower(power * turnDirection);
+
+            telemetry.addData("Target", "%.2f", targetAngle);
+            telemetry.addData("Current Heading", "%.2f", heading);
+            telemetry.addData("Error", "%.2f", error);
+            telemetry.addData("P / I / D", "%.3f / %.3f / %.3f" , p, i, d);
+            telemetry.addData("Power", "%.3f", power);
             telemetry.update();
         }
+    }
 
-        // Stop all motors after turn finishes
-        for (DcMotor m : leftMotors) m.setPower(0);
-        for (DcMotor m : rightMotors) m.setPower(0);
+    private void moveFwdAmt(double distance, IMU imu, DcMotor[] leftMotors, DcMotor[] rightMotors)
+    {
+
     }
 
     // Finds what direction we are rotated relative to the starting direction.
@@ -182,6 +230,15 @@ public class StartTeleOp extends LinearOpMode {
     {
         YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
         return orientation.getYaw(AngleUnit.DEGREES);
+    }
+
+    // keeps angles between -180 and 180
+    private double angleWrap(double degrees)
+    {
+        while (degrees > 180) degrees -= 360; // if angle is greater than 180, subtract 360
+        while (degrees < -180) degrees += 360; // if angle is less than -180, add 360
+
+        return degrees;
     }
 
 }

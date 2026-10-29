@@ -18,10 +18,10 @@ public class StartTeleOp extends LinearOpMode {
     // defining max deadband and power
     private static final double deadband = 0.08;
     private static final double maxPower = 0.9;
-    private static final double maxTurnPower = 0.65;
+    private static final double maxTurnPower = 0.50;
     private static final double kP = 0.015;
     private static final double kI = 0;
-    private static final double kD = 0.01;
+    private static final double kD = 0;
     private static final double turnTolerance = 1.0; // degrees of tolerance
     private static final double integralZone = 10.0; // degree range to use integral
     private static final double turnTimeout = 1.5; // seconds until turn is timed out

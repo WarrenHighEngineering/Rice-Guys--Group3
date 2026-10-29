@@ -5,6 +5,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.ftccommon.internal.manualcontrol.parameters.ImuParameters;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -16,7 +17,9 @@ public class StartTeleOp extends LinearOpMode {
     // defining max deadband and power
     private static final double deadband = 0.08;
     private static final double maxPower = 0.85;
-    private static final double maxTurnPower = 0.35;
+    private static double kP;
+    private static double kI;
+    private static double kD;
 
     boolean lastAState = false; // Checks if a button is pressed already
 

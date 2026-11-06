@@ -1,5 +1,9 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.config.Config;
+import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -12,28 +16,29 @@ import org.firstinspires.ftc.ftccommon.internal.manualcontrol.parameters.ImuPara
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
+@Config
 @TeleOp(name = "StartTeleOp2Test")
 public class StartTeleOp extends LinearOpMode {
 
     // defining max deadband and power
-    private static final double deadband = 0.08;
-    private static final double maxPower = 0.9;
-    private static final double maxTurnPower = 0.50;
-    private static final double kP = 0.015;
-    private static final double kI = 0;
-    private static final double kD = 0;
-    private static final double turnTolerance = 1.0; // degrees of tolerance
-    private static final double integralZone = 10.0; // degree range to use integral
-    private static final double turnTimeout = 1.5; // seconds until turn is timed out
-    private static final int settleLoops = 5; // loops in tolerance
-    private static final int turnDirection = 1; // change to -1 if robot spins wrong way
+    public static double deadband = 0.08;
+    public static double maxPower = 0.9;
+    public static double maxTurnPower = 0.50;
+    public static double kP = 0.015;
+    public static double kI = 0;
+    public static double kD = 0;
+    public static double turnTolerance = 1.0; // degrees of tolerance
+    public static double integralZone = 10.0; // degree range to use integral
+    public static double turnTimeout = 1.5; // seconds until turn is timed out
+    public static int settleLoops = 5; // loops in tolerance
+    public static int turnDirection = 1; // change to -1 if robot spins wrong way
 
     boolean lastCircleState = false; // Checks if a button is pressed already
     boolean lastSquareState = false;
 
     @Override
     public void runOpMode() {
-
+        telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
         // Initializing motors (configs in driver hub)
         DcMotor BLMotor = hardwareMap.get(DcMotor.class, "MotorBL");
         DcMotor BRMotor = hardwareMap.get(DcMotor.class, "MotorBR");
@@ -129,12 +134,12 @@ public class StartTeleOp extends LinearOpMode {
             }
 
             // add statistics and data to debug log on driver hub
-            telemetry.addData("Motor Power Left Side (w/ deadband)", "%.2f", drivePowerLeft);
-            telemetry.addData("Motor Power Right Side (w/ deadband)", "%.2f", drivePowerRight);
-            telemetry.addData("Left Joystick Input", "%.2f", gamepad1.left_stick_y);
-            telemetry.addData("Right Joystick Input", "%.2f", gamepad1.right_stick_y);
-            telemetry.addData("modified power left", "%.2f", moddedPowerLeft);
-            telemetry.addData("modified power right", "%.2f", moddedPowerRight);
+            telemetry.addData("Motor Power Left Side (w/ deadband)", drivePowerLeft);
+            telemetry.addData("Motor Power Right Side (w/ deadband)", drivePowerRight);
+            telemetry.addData("Left Joystick Input", gamepad1.left_stick_y);
+            telemetry.addData("Right Joystick Input", gamepad1.right_stick_y);
+            telemetry.addData("modified power left", moddedPowerLeft);
+            telemetry.addData("modified power right", moddedPowerRight);
             telemetry.addData("Status", "Running");
             telemetry.update();
 

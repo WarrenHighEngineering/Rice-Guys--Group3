@@ -23,18 +23,19 @@ public class StartTeleOp extends LinearOpMode {
     // defining max deadband and power
     public static double deadband = 0.08;
     public static double maxPower = 0.9;
-    public static double maxTurnPower = 0.50;
+    public static double maxTurnPower = 0.85;
     public static double kP = 0.015;
     public static double kI = 0;
     public static double kD = 0;
     public static double turnTolerance = 1.0; // degrees of tolerance
     public static double integralZone = 10.0; // degree range to use integral
-    public static double turnTimeout = 1.5; // seconds until turn is timed out
+    public static double turnTimeout = 0.7; // seconds until turn is timed out
     public static int settleLoops = 5; // loops in tolerance
     public static int turnDirection = 1; // change to -1 if robot spins wrong way
 
     boolean lastCircleState = false; // Checks if a button is pressed already
     boolean lastSquareState = false;
+    boolean turnLocked = false;
 
     @Override
     public void runOpMode() {
@@ -72,14 +73,24 @@ public class StartTeleOp extends LinearOpMode {
         // run until the end of the match (driver presses STOP)
         while (opModeIsActive()) {
 
-            if (gamepad1.square && !lastSquareState)
+            if (gamepad1.square && !lastSquareState && !turnLocked)
             {
                 turnDegrees(90, imu, leftMotors, rightMotors);
+
+                if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
+                {
+                    turnLocked = false;
+                }
             }
 
-            if (gamepad1.circle && !lastCircleState)
+            if (gamepad1.circle && !lastCircleState && !turnLocked)
             {
                 turnDegrees(-90, imu, leftMotors, rightMotors);
+
+                if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
+                {
+                    turnLocked = false;
+                }
             }
             lastSquareState = gamepad1.square;
             lastCircleState = gamepad1.circle;

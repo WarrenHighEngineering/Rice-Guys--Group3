@@ -8,6 +8,7 @@ import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
@@ -24,18 +25,28 @@ public class StartTeleOp extends LinearOpMode {
     public static double deadband = 0.08;
     public static double maxPower = 0.9;
     public static double maxTurnPower = 0.85;
+    public static double intakePower = 0.85;
+    public static double shooterPower = 1;
     public static double kP = 0.015;
     public static double kI = 0;
     public static double kD = 0;
     public static double turnTolerance = 1.0; // degrees of tolerance
+    public static double driveTolerance = 0.5; // inches of allowable error
     public static double integralZone = 10.0; // degree range to use integral
     public static double turnTimeout = 0.7; // seconds until turn is timed out
+    public static double driveTimeout;
+    final public static int GEAR_RATIO = 18; // Gear ratio is 18:1 on the robot (gear reduction + ultraplanetary)
+    final public static int ENCODER_COUNTS_REV = 28 * GEAR_RATIO; // per revolution, 28 encoder ticks
+    final public static double WHEEL_DIAMETER = 3.543;
+    final public static double TICKS_PER_INCH = ENCODER_COUNTS_REV / (WHEEL_DIAMETER * Math.PI);
     public static int settleLoops = 5; // loops in tolerance
     public static int turnDirection = 1; // change to -1 if robot spins wrong way
 
     boolean lastCircleState = false; // Checks if a button is pressed already
     boolean lastSquareState = false;
+    boolean lastTriangleState = false;
     boolean turnLocked = false;
+    boolean driveLocked = false;
 
     @Override
     public void runOpMode() {
@@ -64,6 +75,11 @@ public class StartTeleOp extends LinearOpMode {
             m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         }
 
+        for (DcMotor m : rightMotors) // account for motor mount direction
+        {
+            m.setDirection(DcMotorSimple.Direction.REVERSE);
+        }
+
         // update statistics on driver hub.
         telemetry.addData("Status", "Initialized");
         telemetry.update();
@@ -72,28 +88,35 @@ public class StartTeleOp extends LinearOpMode {
 
         // run until the end of the match (driver presses STOP)
         while (opModeIsActive()) {
-
             if (gamepad1.square && !lastSquareState && !turnLocked)
             {
                 turnDegrees(90, imu, leftMotors, rightMotors);
-
-                if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
-                {
-                    turnLocked = false;
-                }
+            }
+            if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
+            {
+                turnLocked = false;
             }
 
             if (gamepad1.circle && !lastCircleState && !turnLocked)
             {
                 turnDegrees(-90, imu, leftMotors, rightMotors);
+            }
+            if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
+            {
+                turnLocked = false;
+            }
 
-                if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
-                {
-                    turnLocked = false;
-                }
+            if (gamepad1.triangle && !lastTriangleState && driveLocked)
+            {
+                moveFwdAmt(60, leftMotors, rightMotors);
+            }
+            if (gamepad1.left_bumper || gamepad1.right_bumper || gamepad1.left_trigger_pressed || gamepad1.right_trigger_pressed)
+            {
+                driveLocked = false;
             }
             lastSquareState = gamepad1.square;
             lastCircleState = gamepad1.circle;
+            lastTriangleState = gamepad1.triangle;
 
             /* // left stick controls and powers left motors and vice versa for right motors (without deadband)
             double drivePowerLeft = gamepad1.left_stick_y;
@@ -105,11 +128,11 @@ public class StartTeleOp extends LinearOpMode {
 
             if (gamepad1.left_bumper)
             {
-                drivePowerLeft = 1.00;
+                drivePowerLeft = maxPower;
             }
             else if (gamepad1.left_trigger_pressed)
             {
-                drivePowerLeft = -1.00;
+                drivePowerLeft = -maxPower;
             }
             else
             {
@@ -118,11 +141,11 @@ public class StartTeleOp extends LinearOpMode {
 
             if (gamepad1.right_bumper)
             {
-                drivePowerRight = 1.00;
+                drivePowerRight = maxPower;
             }
             else if (gamepad1.right_trigger_pressed)
             {
-                drivePowerRight = -1.00;
+                drivePowerRight = -maxPower;
             }
             else
             {
@@ -141,7 +164,7 @@ public class StartTeleOp extends LinearOpMode {
 
             for (DcMotor m : rightMotors)
             {
-                m.setPower(-moddedPowerRight);
+                m.setPower(moddedPowerRight);
             }
 
             // add statistics and data to debug log on driver hub
@@ -225,7 +248,7 @@ public class StartTeleOp extends LinearOpMode {
 
             // Stop all motors after turn finishes
             for (DcMotor m : leftMotors) m.setPower(power * turnDirection);
-            for (DcMotor m : rightMotors) m.setPower(power * turnDirection);
+            for (DcMotor m : rightMotors) m.setPower(-power * turnDirection);
 
             telemetry.addData("Target", "%.2f", targetAngle);
             telemetry.addData("Current Heading", "%.2f", heading);
@@ -236,9 +259,55 @@ public class StartTeleOp extends LinearOpMode {
         }
     }
 
-    private void moveFwdAmt(double distance, IMU imu, DcMotor[] leftMotors, DcMotor[] rightMotors)
+    private void moveFwdAmt(double distanceInches, DcMotor[] leftMotors, DcMotor[] rightMotors)
     {
+        // the HD HEX motor has 28 ticks per revoultion for the encoder.
+        ElapsedTime timeoutTimer = new ElapsedTime();
+        driveTimeout = (Math.abs(distanceInches) / 10.0) + 1.5;
+        int settledCount = 0;
 
+        // resets motor encoder counts
+        for (DcMotor m : leftMotors)
+        {
+            m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            m.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            m.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
+        for (DcMotor m : rightMotors)
+        {
+            m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            m.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            m.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
+
+        while (opModeIsActive() && (timeoutTimer.seconds() <= driveTimeout))
+        {
+            double currentTicks = leftMotors[0].getCurrentPosition();
+            double currentInches = currentTicks / TICKS_PER_INCH;
+
+            double error = distanceInches - currentInches;
+
+            double p = kP * error;
+            double power = Range.clip(p, -maxPower, maxPower);
+
+            for (DcMotor m : leftMotors) { m.setPower(power); }
+            for (DcMotor m : rightMotors) { m.setPower(power); }
+
+            if (Math.abs(error) < driveTolerance) {
+                settledCount++;
+                if (settledCount > settleLoops) break;
+            } else {
+                settledCount = 0;
+            }
+
+            telemetry.addData("Distance to go: ", error);
+            telemetry.addData("kP: ", p);
+            telemetry.addData("Power: ", power);
+            telemetry.update();
+        }
+
+        for (DcMotor m : leftMotors) { m.setPower(0); }
+        for (DcMotor m : rightMotors) { m.setPower(0); }
     }
 
     // Finds what direction we are rotated relative to the starting direction.
@@ -257,4 +326,16 @@ public class StartTeleOp extends LinearOpMode {
         return degrees;
     }
 
+    private void intakeObject(DcMotor intakeMotor)
+    {
+        intakeMotor.setPower(intakePower);
+    }
+
+    private void shootObject(DcMotor[] shooterMotors)
+    {
+        for (DcMotor motor : shooterMotors)
+        {
+            motor.setPower(shooterPower);
+        }
+    }
 }
